@@ -38,10 +38,12 @@ doesn't create one for you).`,
 			log.Fatal(err)
 		}
 		// Create workdir and set variables based on that
-		WorkDir, _ = utils.CreateWorkDir()
-		KindCfg = WorkDir + "/" + "kind.kubeconfig"
+		workDir, err := utils.CreateWorkDir()
+		cobra.CheckErr(err)
+
+		KindCfg = workDir + "/" + "kind.kubeconfig"
 		// cleanup workdir at the end
-		defer os.RemoveAll(WorkDir)
+		defer os.RemoveAll(workDir)
 
 		// Grab repo related flags
 		ghToken, _ := cmd.Flags().GetString("github-token")
@@ -57,7 +59,7 @@ doesn't create one for you).`,
 		awsWMachine, _ := cmd.Flags().GetString("aws-node-machine")
 		skipCloudFormation, _ := cmd.Flags().GetBool("skip-cloud-formation")
 
-		CapiCfg := WorkDir + "/" + clusterName + ".kubeconfig"
+		CapiCfg := workDir + "/" + clusterName + ".kubeconfig"
 		gokpartifacts := os.Getenv("HOME") + "/.gokp/" + clusterName
 
 		tcpName := "gokp-bootstrapper"
@@ -87,33 +89,33 @@ doesn't create one for you).`,
 
 		// By default, create an HA Cluster
 		haCluster := true
-		_, err = capi.CreateAwsK8sInstance(KindCfg, &clusterName, WorkDir, awsCredsMap, CapiCfg, haCluster, skipCloudFormation)
+		_, err = capi.CreateAwsK8sInstance(KindCfg, &clusterName, workDir, awsCredsMap, CapiCfg, haCluster, skipCloudFormation)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		// Create the GitOps repo
-		_, gitopsrepo, err := github.CreateRepo(&clusterName, ghToken, &privateRepo, WorkDir)
+		_, gitopsrepo, err := github.CreateRepo(&clusterName, ghToken, &privateRepo, workDir)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		// Create repo dir structure. Including Argo CD install YAMLs and base YAMLs. Push initial dir structure out
-		_, err = templates.CreateRepoSkel(&clusterName, WorkDir, ghToken, gitopsrepo, &privateRepo)
+		_, err = templates.CreateRepoSkel(&clusterName, workDir, ghToken, gitopsrepo, &privateRepo)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		// Export/Create Cluster YAML to the Repo, Make sure kustomize is used for the core components
 		log.Info("Exporting Cluster YAML")
-		_, err = export.ExportClusterYaml(CapiCfg, WorkDir+"/"+clusterName)
+		_, err = export.ExportClusterYaml(CapiCfg, workDir+"/"+clusterName)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		// Git push newly exported YAML to GitOps repo
-		privateKeyFile := WorkDir + "/" + clusterName + "_rsa"
-		_, err = github.CommitAndPush(WorkDir+"/"+clusterName, privateKeyFile, "exporting existing YAML")
+		privateKeyFile := workDir + "/" + clusterName + "_rsa"
+		_, err = github.CommitAndPush(workDir+"/"+clusterName, privateKeyFile, "exporting existing YAML")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -121,7 +123,7 @@ doesn't create one for you).`,
 		// Install Argo CD on the newly created cluster
 		// Deploy applications/applicationsets
 		log.Info("Deploying Argo CD GitOps Controller")
-		_, err = argo.BootstrapArgoCD(&clusterName, WorkDir, CapiCfg)
+		_, err = argo.BootstrapArgoCD(&clusterName, workDir, CapiCfg)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -143,8 +145,8 @@ doesn't create one for you).`,
 
 		// Move components to ~/.gokp/<clustername> and remove stuff you don't need to know.
 		// 	TODO: this is ugly and will refactor this later
-		///err = utils.CopyDir(WorkDir, gokpartifacts)
-		err = os.Rename(WorkDir, gokpartifacts)
+		///err = utils.CopyDir(workDir, gokpartifacts)
+		err = os.Rename(workDir, gokpartifacts)
 		if err != nil {
 			log.Fatal(err)
 		}

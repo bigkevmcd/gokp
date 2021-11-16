@@ -257,7 +257,7 @@ func CreateAwsK8sInstance(kindkconfig string, clusterName *string, workdir strin
 	}
 	//	Download the CNI YAML
 	cniYaml := workdir + "/" + "cni.yaml"
-	_, err = utils.DownloadFile(cniYaml, CNIurl)
+	err = utils.DownloadFile(cniYaml, CNIurl)
 	if err != nil {
 		return false, err
 	}
@@ -496,7 +496,7 @@ func CreateDevelK8sInstance(kindkconfig string, clusterName *string, workdir str
 	}
 	//	Download the CNI YAML
 	cniYaml := workdir + "/" + "cni.yaml"
-	_, err = utils.DownloadFile(cniYaml, CNIurl)
+	err = utils.DownloadFile(cniYaml, CNIurl)
 	if err != nil {
 		return false, err
 	}
