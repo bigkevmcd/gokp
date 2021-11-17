@@ -72,7 +72,7 @@ so beware. This create a local cluster for testing. PRE-PRE-ALPHA.`,
 		}
 
 		// Create the GitOps repo
-		_, gitopsrepo, err := github.CreateRepo(&clusterName, ghToken, &privateRepo, WorkDir)
+		gitopsrepo, err := github.CreateRepo(clusterName, ghToken, privateRepo, WorkDir)
 		if err != nil {
 			log.Fatal(err)
 		}

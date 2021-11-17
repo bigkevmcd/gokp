@@ -40,7 +40,7 @@ This only deletes the cluster and not the git repo.`,
 
 		// Move Capi components to the KIND cluster
 		log.Info("Moving CAPI Artifacts to the tempoary control plane")
-		_, err = capi.MoveMgmtCluster(CapiCfg, KindCfg)
+		err = capi.MoveMgmtCluster(CapiCfg, KindCfg)
 		if err != nil {
 			log.Fatal(err)
 

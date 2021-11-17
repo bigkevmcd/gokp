@@ -44,14 +44,15 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-var CNIurl string = "https://docs.projectcalico.org/v3.20/manifests/calico.yaml"
+const CNIurl string = "https://docs.projectcalico.org/v3.20/manifests/calico.yaml"
 
 var decUnstructured = yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
 
 var KubernetesVersion string = "v1.22.2"
 
-// CreateAwsK8sInstance creates a Kubernetes cluster on AWS using CAPI and CAPI-AWS
-func CreateAwsK8sInstance(kindkconfig string, clusterName *string, workdir string, awscreds map[string]string, capicfg string, createHaCluster bool, skipCloudFormation bool) (bool, error) {
+// CreateAWSK8sInstance creates a Kubernetes cluster on AWS using CAPI and
+// CAPI-AWS.
+func CreateAWSK8sInstance(kindkconfig, clusterName, workdir string, awscreds map[string]string, capicfg string, createHaCluster bool, skipCloudFormation bool) (bool, error) {
 	// Export AWS settings as Env vars
 	for k := range awscreds {
 		os.Setenv(k, awscreds[k])
@@ -61,10 +62,9 @@ func CreateAwsK8sInstance(kindkconfig string, clusterName *string, workdir strin
 	var cpMachineCount int64
 	var workerMachineCount int64
 
-	// Boostrapping Cloud Formation stack on AWS only if needed
+	// Bootstrapping Cloud Formation stack on AWS only if needed
 	if !skipCloudFormation {
-
-		log.Info("Boostrapping Cloud Formation stack on AWS")
+		log.Info("Bootstrapping Cloud Formation stack on AWS")
 		template := bootstrap.NewTemplate()
 		sess, err := session.NewSession()
 		if err != nil {
@@ -77,7 +77,6 @@ func CreateAwsK8sInstance(kindkconfig string, clusterName *string, workdir strin
 		if err != nil {
 			return false, err
 		}
-
 	} else {
 		log.Info("Skipping CloudFormation Creation")
 	}
@@ -132,7 +131,7 @@ func CreateAwsK8sInstance(kindkconfig string, clusterName *string, workdir strin
 	}
 	cto := capiclient.GetClusterTemplateOptions{
 		Kubeconfig:               capiclient.Kubeconfig{Path: kindkconfig},
-		ClusterName:              *clusterName,
+		ClusterName:              clusterName,
 		ControlPlaneMachineCount: &cpMachineCount,
 		WorkerMachineCount:       &workerMachineCount,
 		KubernetesVersion:        KubernetesVersion,
@@ -218,13 +217,13 @@ func CreateAwsK8sInstance(kindkconfig string, clusterName *string, workdir strin
 	// Wait for the controlplane to have 3 nodes and that they are initialized
 
 	//	First, wait for the infra to appear
-	_, err = waitForAWSInfra(clusterInstallConfig, *clusterName)
+	_, err = waitForAWSInfra(clusterInstallConfig, clusterName)
 	if err != nil {
 		return false, err
 	}
 
 	//	Then, wait for the CP to appear
-	_, err = waitForCP(clusterInstallConfig, *clusterName, createHaCluster)
+	_, err = waitForCP(clusterInstallConfig, clusterName, createHaCluster)
 	if err != nil {
 		return false, err
 	}
@@ -234,7 +233,7 @@ func CreateAwsK8sInstance(kindkconfig string, clusterName *string, workdir strin
 	// Write out CAPI kubeconfig and save it
 	clusterKubeconfig, err := c.GetKubeconfig(capiclient.GetKubeconfigOptions{
 		Kubeconfig:          capiclient.Kubeconfig{Path: kindkconfig},
-		WorkloadClusterName: *clusterName,
+		WorkloadClusterName: clusterName,
 	})
 	if err != nil {
 		return false, err
@@ -812,63 +811,56 @@ func DeleteCluster(cfg string, name string) (bool, error) {
 	return true, nil
 }
 
-// MoveMgmtCluster moves the management cluster from src kubeconfig to dest kubeconfig
-func MoveMgmtCluster(src string, dest string) (bool, error) {
-	// create capi client
+// MoveMgmtCluster moves the management cluster from src kubeconfig to dest
+// kubeconfig.
+//
+// src and dest are the filenames of the kubeconfigs to copy between.
+func MoveMgmtCluster(src, dest string) error {
 	c, err := capiclient.New("")
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	// Create clientset for src
-	srcclient, err := clientcmd.BuildConfigFromFlags("", src)
+	srcConfig, err := clientcmd.BuildConfigFromFlags("", src)
 	if err != nil {
-		return false, err
+		return err
 	}
-	srcclientset, err := kubernetes.NewForConfig(srcclient)
+	srcClient, err := kubernetes.NewForConfig(srcConfig)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	// Get the secret and base64 encode it (you'd think it would come encoded but it doesn't)
-	secret, err := srcclientset.CoreV1().Secrets("capa-system").Get(context.TODO(), "capa-manager-bootstrap-credentials", metav1.GetOptions{})
+	secret, err := srcClient.CoreV1().Secrets("capa-system").Get(context.TODO(), "capa-manager-bootstrap-credentials", metav1.GetOptions{})
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	s := secret.Data["credentials"]
 	sb64 := base64.StdEncoding.EncodeToString(s)
-	if err != nil {
-		return false, err
-	}
 
 	// export it into the env
 	os.Setenv("AWS_B64ENCODED_CREDENTIALS", sb64)
+	defer os.Unsetenv("AWS_B64ENCODED_CREDENTIALS")
 
 	// init the dest cluster
 	_, err = c.Init(capiclient.InitOptions{
 		Kubeconfig:              capiclient.Kubeconfig{Path: dest},
 		InfrastructureProviders: []string{"aws"},
 	})
-
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	// perform the move
 	err = c.Move(capiclient.MoveOptions{
 		FromKubeconfig: capiclient.Kubeconfig{Path: src},
 		ToKubeconfig:   capiclient.Kubeconfig{Path: dest},
 	})
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	// Unset the env var
-	os.Unsetenv("AWS_B64ENCODED_CREDENTIALS")
-
-	// if we're here we must be okay
-	return true, nil
+	return nil
 }
 
 // WaitForDeletion waits for the resouce to be deleted

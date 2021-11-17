@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -19,15 +20,14 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// CreateRepo taks a name, token, and a private request and creates a repository on GitHub
-func CreateRepo(name *string, token string, private *bool, workdir string) (bool, string, error) {
-	desc := "GitOps repo Cluster " + *name
-	description := &desc
-	autoInit := true
-	log.Info("Creating repo for: ", *name)
-
-	// display if a private repo was requested
-	if *private {
+// CreateRepo taks a name, token, and a private request and creates a repository
+// on GitHub.
+//
+// IT returns
+func CreateRepo(name, token string, private bool, workdir string) (string, error) {
+	desc := "GitOps repo Cluster " + name
+	log.Info("Creating repo for: ", name)
+	if private {
 		log.Info("Private repo requested")
 	}
 
@@ -41,37 +41,41 @@ func CreateRepo(name *string, token string, private *bool, workdir string) (bool
 	tc := oauth2.NewClient(ctx, ts)
 	client := github.NewClient(tc)
 
-	r := &github.Repository{Name: name, Private: private, Description: description, AutoInit: &autoInit}
+	r := &github.Repository{
+		Name: github.String(name), Private: github.Bool(private),
+		Description: github.String(desc), AutoInit: github.Bool(true),
+	}
 	repo, _, err := client.Repositories.Create(ctx, "", r)
 	if err != nil {
-		return false, "", err
+		return "", err
 	}
 
 	// Create an SSHKeypair for the repo.
-	publicKeyBytes, err := generateSSHKeypair(*name, workdir)
+	publicKeyBytes, err := generateSSHKeypair(name, workdir)
 	if err != nil {
-		return false, "", err
+		return "", err
 	}
 
 	// upload public sshkey as a deploy key
-	err = uploadDeployKey(publicKeyBytes, repo.GetOwner().GetLogin(), *name, client)
+	err = uploadDeployKey(publicKeyBytes, repo.GetOwner().GetLogin(), name, client)
 	if err != nil {
-		return false, "", err
+		return "", err
 	}
 
 	// Get the remote URL and set the name of the local copy
 	//repoUrl := repo.GetCloneURL()
 	repoUrl := repo.GetSSHURL()
-	localRepo := workdir + "/" + *name
-
-	// Maksure the localRepo is there
-	os.MkdirAll(localRepo, 0755)
+	localRepo := filepath.Join(workdir, name)
+	// Make sure the localRepo is there
+	if err := os.MkdirAll(localRepo, 0755); err != nil {
+		return "", err
+	}
 
 	// Read sshkey to do the clone
-	privateKeyFile := workdir + "/" + *name + "_rsa"
+	privateKeyFile := workdir + "/" + name + "_rsa"
 	authKey, err := plumbingssh.NewPublicKeysFromFile("git", privateKeyFile, "")
 	if err != nil {
-		return false, "", err
+		return "", err
 	}
 
 	// Clone the repo locally in the working dir (as localRepo)
@@ -87,11 +91,11 @@ func CreateRepo(name *string, token string, private *bool, workdir string) (bool
 	})
 
 	if err != nil {
-		return false, "", err
+		return "", err
 	}
 
 	log.Info("Successfully created new repo: ", repoUrl)
-	return true, repoUrl, nil
+	return repoUrl, nil
 }
 
 // CommitAndPush commits and pushes changes to a github repo that has been changed locally

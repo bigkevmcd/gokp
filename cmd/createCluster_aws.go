@@ -89,13 +89,13 @@ doesn't create one for you).`,
 
 		// By default, create an HA Cluster
 		haCluster := true
-		_, err = capi.CreateAwsK8sInstance(KindCfg, &clusterName, workDir, awsCredsMap, CapiCfg, haCluster, skipCloudFormation)
+		_, err = capi.CreateAWSK8sInstance(KindCfg, clusterName, workDir, awsCredsMap, CapiCfg, haCluster, skipCloudFormation)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		// Create the GitOps repo
-		_, gitopsrepo, err := github.CreateRepo(&clusterName, ghToken, &privateRepo, workDir)
+		gitopsrepo, err := github.CreateRepo(clusterName, ghToken, privateRepo, workDir)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -131,7 +131,7 @@ doesn't create one for you).`,
 		// MOVE from kind to capi instance
 		//	uses the kubeconfig files of "src ~> dest"
 		log.Info("Moving CAPI Artifacts to: " + clusterName)
-		_, err = capi.MoveMgmtCluster(KindCfg, CapiCfg)
+		err = capi.MoveMgmtCluster(KindCfg, CapiCfg)
 		if err != nil {
 			log.Fatal(err)
 		}
